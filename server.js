@@ -76,7 +76,10 @@ app.post('/api/register', async (req, res) => {
 
         await newUser.save();
 
-        const verificationLink = `https://drinkstop-backend.onrender.com/api/verify/${token}`;
+        // Dynamiczne pobieranie adresu serwera (działa i lokalnie, i na Renderze)
+        const protocol = req.protocol;
+        const host = req.get('host');
+        const verificationLink = `${protocol}://${host}/api/verify/${token}`;
         
         await sendBrevoEmail(
             email,
@@ -168,7 +171,9 @@ app.post('/api/forgot-password', async (req, res) => {
         user.resetPasswordExpires = Date.now() + 15 * 60 * 1000; 
         await user.save();
 
-        const resetLink = `https://drinkstop-backend.onrender.com/reset.html?token=${token}`;
+        const protocol = req.protocol;
+        const host = req.get('host');
+        const resetLink = `${protocol}://${host}/reset.html?token=${token}`;
 
         await sendBrevoEmail(
             email,
