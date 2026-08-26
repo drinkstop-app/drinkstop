@@ -5,8 +5,8 @@ const cors = require('cors');
 const bcrypt = require('bcryptjs');
 const crypto = require('crypto');
 const path = require('path');
-const nodemailer = require('nodemailer');
 const jwt = require('jsonwebtoken');
+const SibApiV3Sdk = require('@getbrevo/brevo');
 
 const app = express();
 
@@ -34,15 +34,11 @@ const userSchema = new mongoose.Schema({
 });
 const User = mongoose.model('User', userSchema);
 
-// --- 3. KONFIGURACJA E-MAILI (BREVO / SMTP) ---
-const transporter = nodemailer.createTransport({
-    host: process.env.EMAIL_HOST,
-    port: process.env.EMAIL_PORT,
-    auth: {
-        user: process.env.EMAIL_USER,
-        pass: process.env.EMAIL_PASS
-    }
-});
+// --- 3. KONFIGURACJA API BREVO ---
+const defaultClient = SibApiV3Sdk.ApiClient.instance;
+const apiKey = defaultClient.authentications['api-key'];
+apiKey.apiKey = process.env.BREVO_API_KEY;
+const apiInstance = new SibApiV3Sdk.TransactionalEmailsApi();
 
 // --- 4. REJESTRACJA ---
 app.post('/api/register', async (req, res) => {
@@ -65,20 +61,19 @@ app.post('/api/register', async (req, res) => {
 
         const verificationLink = `https://drinkstop-backend.onrender.com/api/verify/${token}`;
         
-        const mailOptions = {
-            from: `"Drink Stop" <${process.env.EMAIL_FROM}>`,
-            to: email,
+        // WYSYŁKA MAILA PRZEZ BREVO API
+        await apiInstance.sendTransacEmail({
+            sender: { email: process.env.EMAIL_FROM || "noreply@drinkstop.pl", name: "Drink Stop" },
+            to: [{ email: email }],
             subject: 'Potwierdź swój adres e-mail w Drink Stop! 🍻',
-            html: `
+            htmlContent: `
                 <div style="font-family: Arial, sans-serif; text-align: center; padding: 20px;">
                     <h2 style="color: #f5a623;">Witaj w Drink Stop, ${name}!</h2>
                     <p>Aby w pełni korzystać z aplikacji, aktywuj swoje konto:</p>
                     <a href="${verificationLink}" style="display: inline-block; padding: 12px 24px; background-color: #f5a623; color: #000; text-decoration: none; border-radius: 8px; font-weight: bold; margin-top: 20px;">Aktywuj konto 🍻</a>
                 </div>
             `
-        };
-
-        transporter.sendMail(mailOptions);
+        });
 
         res.status(201).json({ message: 'Konto utworzone! Sprawdź swoją skrzynkę e-mail, aby je aktywować.' });
 
@@ -155,15 +150,17 @@ app.post('/api/forgot-password', async (req, res) => {
 
         const token = crypto.randomBytes(32).toString('hex');
         user.resetPasswordToken = token;
-user.resetPasswordExpires = Date.now() + 15 * 60 * 1000; // 15 minut
-await user.save();
+        user.resetPasswordExpires = Date.now() + 15 * 60 * 1000; // 15 minut
+        await user.save();
 
-const resetLink = `https://drinkstop-backend.onrender.com/reset.html?token=${token}`;
-        const mailOptions = {
-            from: `"Drink Stop" <${process.env.EMAIL_FROM}>`,
-            to: email,
+        const resetLink = `https://drinkstop-backend.onrender.com/reset.html?token=${token}`;
+
+        // WYSYŁKA MAILA PRZEZ BREVO API
+        await apiInstance.sendTransacEmail({
+            sender: { email: process.env.EMAIL_FROM || "noreply@drinkstop.pl", name: "Drink Stop" },
+            to: [{ email: email }],
             subject: 'Resetowanie hasła w Drink Stop 🔑',
-            html: `
+            htmlContent: `
                 <div style="font-family: Arial, sans-serif; text-align: center; padding: 20px;">
                     <h2 style="color: #f5a623;">Resetowanie hasła</h2>
                     <p>Otrzymaliśmy prośbę o zresetowanie hasła do Twojego konta. Kliknij w poniższy przycisk:</p>
@@ -171,9 +168,8 @@ const resetLink = `https://drinkstop-backend.onrender.com/reset.html?token=${tok
                     <p style="margin-top: 20px; font-size: 12px; color: #888;">Link jest ważny przez 15 minut.</p>
                 </div>
             `
-        };
+        });
 
-        transporter.sendMail(mailOptions);
         res.json({ message: 'Link do resetowania hasła został wysłany na Twój e-mail!' });
 
     } catch (error) {
@@ -209,7 +205,7 @@ app.post('/api/reset-password', async (req, res) => {
     }
 });
 
-// --- 10. START SERWERA ---
+// --- 9. START SERWERA ---
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
     console.log(`🚀 Serwer działa! Otwórz: http://localhost:${PORT}`);
