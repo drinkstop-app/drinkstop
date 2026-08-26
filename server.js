@@ -85,10 +85,18 @@ app.post('/api/register', async (req, res) => {
             email,
             'Potwierdź swój adres e-mail w Drink Stop! 🍻',
             `
-                <div style="font-family: Arial, sans-serif; text-align: center; padding: 20px;">
-                    <h2 style="color: #f5a623;">Witaj w Drink Stop, ${name}!</h2>
-                    <p>Aby w pełni korzystać z aplikacji, aktywuj swoje konto:</p>
-                    <a href="${verificationLink}" style="display: inline-block; padding: 12px 24px; background-color: #f5a623; color: #000; text-decoration: none; border-radius: 8px; font-weight: bold; margin-top: 20px;">Aktywuj konto 🍻</a>
+                <div style="font-family: Arial, sans-serif; text-align: center; padding: 20px; background-color: #f9f9f9; border-radius: 10px;">
+                    <h2 style="color: #f5a623; margin-bottom: 10px;">Witaj w Drink Stop, ${name}!</h2>
+                    <p style="color: #333; font-size: 15px;">Aby w pełni korzystać z aplikacji, aktywuj swoje konto:</p>
+                    
+                    <a href="${verificationLink}" style="display: inline-block; padding: 12px 24px; background-color: #f5a623; color: #000; text-decoration: none; border-radius: 8px; font-weight: bold; margin: 20px 0;">Aktywuj konto 🍻</a>
+                    
+                    <hr style="border: none; border-top: 1px solid #ddd; margin: 30px 0 20px 0;">
+                    
+                    <p style="color: #888; font-size: 12px; line-height: 1.5; margin: 0;">
+                        Wiadomość została wygenerowana automatycznie, prosimy na nią nie odpowiadać.<br>
+                        Jeśli to nie Ty zakładałeś konto w aplikacji Drink Stop, po prostu zignoruj tę wiadomość.
+                    </p>
                 </div>
             `
         );
