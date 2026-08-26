@@ -63,7 +63,7 @@ app.post('/api/register', async (req, res) => {
 
         await newUser.save();
 
-        const verificationLink = `http://localhost:5000/api/verify/${token}`;
+        const verificationLink = `https://drinkstop-backend.onrender.com/api/verify/${token}`;
         
         const mailOptions = {
             from: `"Drink Stop" <${process.env.EMAIL_FROM}>`,
@@ -99,12 +99,12 @@ app.get('/api/verify/:token', async (req, res) => {
         await user.save();
 
         res.send(`
-            <div style="font-family: sans-serif; text-align: center; margin-top: 50px; background-color: #121212; color: white; height: 100vh; padding-top: 50px;">
-                <h1 style="color: #90c83a;">Konto zostało aktywowane! ✅</h1>
-                <p>Możesz teraz wrócić do aplikacji Drink Stop i się zalogować.</p>
-                <a href="http://192.168.1.15:5000" style="color: #f5a623; font-weight: bold; text-decoration: none; font-size: 18px;">Wróć do aplikacji</a>
-            </div>
-        `);
+    <div style="font-family: sans-serif; text-align: center; margin-top: 50px; background-color: #121212; color: white; height: 100vh; padding-top: 50px;">
+        <h1 style="color: #90c83a;">Konto zostało aktywowane! ✅</h1>
+        <p>Możesz teraz wrócić do aplikacji Drink Stop i się zalogować.</p>
+        <a href="https://drinkstop-backend.onrender.com" style="color: #f5a623; font-weight: bold; text-decoration: none; font-size: 18px;">Wróć do aplikacji</a>
+    </div>
+`);
     } catch (error) {
         res.status(500).send('Wystąpił błąd podczas aktywacji.');
     }
@@ -155,11 +155,10 @@ app.post('/api/forgot-password', async (req, res) => {
 
         const token = crypto.randomBytes(32).toString('hex');
         user.resetPasswordToken = token;
-        user.resetPasswordExpires = Date.now() + 15 * 60 * 1000; // 15 minut
-        await user.save();
+user.resetPasswordExpires = Date.now() + 15 * 60 * 1000; // 15 minut
+await user.save();
 
-        const resetLink = `192.168.1.15:5000/reset.html?token=${token}`;
-
+const resetLink = `https://drinkstop-backend.onrender.com/reset.html?token=${token}`;
         const mailOptions = {
             from: `"Drink Stop" <${process.env.EMAIL_FROM}>`,
             to: email,
