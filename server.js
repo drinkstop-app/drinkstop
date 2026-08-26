@@ -209,13 +209,6 @@ app.post('/api/reset-password', async (req, res) => {
     }
 });
 
-// --- 9. SERWOWANIE PLIKÓW ---
-app.use(express.static(path.join(__dirname, '../public')));
-
-app.get('/', (req, res) => {
-    res.sendFile(path.join(__dirname, '../public/index.html'));
-});
-
 // --- 10. START SERWERA ---
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
