@@ -112,12 +112,11 @@ app.get('/api/verify/:token', async (req, res) => {
         await user.save();
 
         res.send(`
-    <div style="font-family: sans-serif; text-align: center; margin-top: 50px; background-color: #121212; color: white; height: 100vh; padding-top: 50px;">
-        <h1 style="color: #90c83a;">Konto zostało aktywowane! ✅</h1>
-        <p>Możesz teraz wrócić do aplikacji Drink Stop i się zalogować.</p>
-        <a href="https://drinkstop-backend.onrender.com" style="color: #f5a623; font-weight: bold; text-decoration: none; font-size: 18px;">Wróć do aplikacji</a>
-    </div>
-`);
+            <div style="font-family: sans-serif; text-align: center; margin-top: 50px; background-color: #121212; color: white; height: 100vh; padding-top: 50px;">
+                <h1 style="color: #90c83a;">Konto zostało aktywowane! ✅</h1>
+                <p>Możesz teraz bezpiecznie zamknąć tę kartę i zalogować się w aplikacji.</p>
+            </div>
+        `);
     } catch (error) {
         res.status(500).send('Wystąpił błąd podczas aktywacji.');
     }
