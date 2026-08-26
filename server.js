@@ -29,16 +29,14 @@ const userSchema = new mongoose.Schema({
     password: String,
     isVerified: { type: Boolean, default: false }, 
     verificationToken: String,
-    resetPasswordToken: String,      // Token do resetu hasła
-    resetPasswordExpires: Date       // Czas wygaśnięcia tokenu
+    resetPasswordToken: String,      
+    resetPasswordExpires: Date       
 });
 const User = mongoose.model('User', userSchema);
 
 // --- 3. KONFIGURACJA API BREVO ---
-const defaultClient = SibApiV3Sdk.ApiClient.instance;
-const apiKey = defaultClient.authentications['api-key'];
-apiKey.apiKey = process.env.BREVO_API_KEY;
 const apiInstance = new SibApiV3Sdk.TransactionalEmailsApi();
+apiInstance.setApiKey(SibApiV3Sdk.TransactionalEmailsApiApiKeys.apiKey, process.env.BREVO_API_KEY);
 
 // --- 4. REJESTRACJA ---
 app.post('/api/register', async (req, res) => {
@@ -61,7 +59,6 @@ app.post('/api/register', async (req, res) => {
 
         const verificationLink = `https://drinkstop-backend.onrender.com/api/verify/${token}`;
         
-        // WYSYŁKA MAILA PRZEZ BREVO API
         await apiInstance.sendTransacEmail({
             sender: { email: process.env.EMAIL_FROM || "noreply@drinkstop.pl", name: "Drink Stop" },
             to: [{ email: email }],
@@ -138,7 +135,7 @@ app.post('/api/login', async (req, res) => {
     }
 });
 
-// --- 7. ZAPOMNIANE HASŁO (WYSYŁKA MAILA) ---
+// --- 7. ZAPOMNIANE HASŁO ---
 app.post('/api/forgot-password', async (req, res) => {
     try {
         const { email } = req.body;
@@ -150,12 +147,11 @@ app.post('/api/forgot-password', async (req, res) => {
 
         const token = crypto.randomBytes(32).toString('hex');
         user.resetPasswordToken = token;
-        user.resetPasswordExpires = Date.now() + 15 * 60 * 1000; // 15 minut
+        user.resetPasswordExpires = Date.now() + 15 * 60 * 1000; 
         await user.save();
 
         const resetLink = `https://drinkstop-backend.onrender.com/reset.html?token=${token}`;
 
-        // WYSYŁKA MAILA PRZEZ BREVO API
         await apiInstance.sendTransacEmail({
             sender: { email: process.env.EMAIL_FROM || "noreply@drinkstop.pl", name: "Drink Stop" },
             to: [{ email: email }],
