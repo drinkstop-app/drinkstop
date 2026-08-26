@@ -36,7 +36,8 @@ const User = mongoose.model('User', userSchema);
 
 // --- 3. KONFIGURACJA API BREVO ---
 const apiInstance = new SibApiV3Sdk.TransactionalEmailsApi();
-apiInstance.setApiKey(SibApiV3Sdk.TransactionalEmailsApiApiKeys.apiKey, process.env.BREVO_API_KEY);
+// Przypisanie klucza API bezpośrednio do instancji autoryzacji
+apiInstance.authentications['apiKey'].apiKey = process.env.BREVO_API_KEY;
 
 // --- 4. REJESTRACJA ---
 app.post('/api/register', async (req, res) => {
