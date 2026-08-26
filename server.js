@@ -6,7 +6,6 @@ const bcrypt = require('bcryptjs');
 const crypto = require('crypto');
 const path = require('path');
 const jwt = require('jsonwebtoken');
-const SibApiV3Sdk = require('@getbrevo/brevo');
 
 const app = express();
 
@@ -34,10 +33,29 @@ const userSchema = new mongoose.Schema({
 });
 const User = mongoose.model('User', userSchema);
 
-// --- 3. KONFIGURACJA API BREVO ---
-const apiInstance = new SibApiV3Sdk.TransactionalEmailsApi();
-// Przypisanie klucza API bezpośrednio do instancji autoryzacji
-apiInstance.authentications['apiKey'].apiKey = process.env.BREVO_API_KEY;
+// --- FUNKCJA POMOCNICZA DO WYSYŁKI MAILI PRZEZ API BREVO ---
+async function sendBrevoEmail(toEmail, subject, htmlContent) {
+    const response = await fetch('https://api.brevo.com/v3/smtp/email', {
+        method: 'POST',
+        headers: {
+            'accept': 'application/json',
+            'api-key': process.env.BREVO_API_KEY,
+            'content-type': 'application/json'
+        },
+        body: JSON.stringify({
+            sender: { email: process.env.EMAIL_FROM || "noreply@drinkstop.pl", name: "Drink Stop" },
+            to: [{ email: toEmail }],
+            subject: subject,
+            htmlContent: htmlContent
+        })
+    });
+
+    if (!response.ok) {
+        const errData = await response.json();
+        throw new Error(JSON.stringify(errData));
+    }
+    return await response.json();
+}
 
 // --- 4. REJESTRACJA ---
 app.post('/api/register', async (req, res) => {
@@ -60,24 +78,23 @@ app.post('/api/register', async (req, res) => {
 
         const verificationLink = `https://drinkstop-backend.onrender.com/api/verify/${token}`;
         
-        await apiInstance.sendTransacEmail({
-            sender: { email: process.env.EMAIL_FROM || "noreply@drinkstop.pl", name: "Drink Stop" },
-            to: [{ email: email }],
-            subject: 'Potwierdź swój adres e-mail w Drink Stop! 🍻',
-            htmlContent: `
+        await sendBrevoEmail(
+            email,
+            'Potwierdź swój adres e-mail w Drink Stop! 🍻',
+            `
                 <div style="font-family: Arial, sans-serif; text-align: center; padding: 20px;">
                     <h2 style="color: #f5a623;">Witaj w Drink Stop, ${name}!</h2>
                     <p>Aby w pełni korzystać z aplikacji, aktywuj swoje konto:</p>
                     <a href="${verificationLink}" style="display: inline-block; padding: 12px 24px; background-color: #f5a623; color: #000; text-decoration: none; border-radius: 8px; font-weight: bold; margin-top: 20px;">Aktywuj konto 🍻</a>
                 </div>
             `
-        });
+        );
 
         res.status(201).json({ message: 'Konto utworzone! Sprawdź swoją skrzynkę e-mail, aby je aktywować.' });
 
     } catch (error) {
-        console.error(error);
-        res.status(500).json({ message: 'Wystąpił błąd serwera' });
+        console.error('Błąd wysyłki e-maila:', error);
+        res.status(500).json({ message: 'Wystąpił błąd serwera podczas wysyłania e-maila' });
     }
 });
 
@@ -153,11 +170,10 @@ app.post('/api/forgot-password', async (req, res) => {
 
         const resetLink = `https://drinkstop-backend.onrender.com/reset.html?token=${token}`;
 
-        await apiInstance.sendTransacEmail({
-            sender: { email: process.env.EMAIL_FROM || "noreply@drinkstop.pl", name: "Drink Stop" },
-            to: [{ email: email }],
-            subject: 'Resetowanie hasła w Drink Stop 🔑',
-            htmlContent: `
+        await sendBrevoEmail(
+            email,
+            'Resetowanie hasła w Drink Stop 🔑',
+            `
                 <div style="font-family: Arial, sans-serif; text-align: center; padding: 20px;">
                     <h2 style="color: #f5a623;">Resetowanie hasła</h2>
                     <p>Otrzymaliśmy prośbę o zresetowanie hasła do Twojego konta. Kliknij w poniższy przycisk:</p>
@@ -165,7 +181,7 @@ app.post('/api/forgot-password', async (req, res) => {
                     <p style="margin-top: 20px; font-size: 12px; color: #888;">Link jest ważny przez 15 minut.</p>
                 </div>
             `
-        });
+        );
 
         res.json({ message: 'Link do resetowania hasła został wysłany na Twój e-mail!' });
 
