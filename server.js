@@ -81,7 +81,6 @@ app.post('/api/register', async (req, res) => {
 
         await newUser.save();
 
-        // Dynamiczne pobieranie adresu serwera (działa i lokalnie, i na Renderze)
         const protocol = req.protocol;
         const host = req.get('host');
         const verificationLink = `${protocol}://${host}/api/verify/${token}`;
@@ -176,12 +175,6 @@ app.post('/api/login', async (req, res) => {
     }
 });
 
-    } catch (error) {
-        console.error(error);
-        res.status(500).json({ message: 'Błąd serwera podczas logowania.' });
-    }
-});
-
 // --- 7. ZAPOMNIANE HASŁO ---
 app.post('/api/forgot-password', async (req, res) => {
     try {
@@ -249,13 +242,7 @@ app.post('/api/reset-password', async (req, res) => {
     }
 });
 
-// --- 9. START SERWERA ---
-const PORT = process.env.PORT || 5000;
-app.listen(PORT, () => {
-    console.log(`🚀 Serwer działa! Otwórz: http://localhost:${PORT}`);
-});
-
-// --- 10. AKTUALIZACJA PROFILU ---
+// --- 9. AKTUALIZACJA PROFILU ---
 app.post('/api/update-profile', async (req, res) => {
     try {
         const { email, name, age, city, interests, desc, photo } = req.body;
@@ -292,7 +279,7 @@ app.post('/api/update-profile', async (req, res) => {
     }
 });
 
-// --- 11. AKTYWACJA PREMIUM ---
+// --- 10. AKTYWACJA PREMIUM ---
 app.post('/api/activate-premium', async (req, res) => {
     try {
         const { email } = req.body;
@@ -310,4 +297,10 @@ app.post('/api/activate-premium', async (req, res) => {
         console.error(error);
         res.status(500).json({ message: 'Błąd podczas aktywacji pakietu.' });
     }
+});
+
+// --- 11. START SERWERA ---
+const PORT = process.env.PORT || 5000;
+app.listen(PORT, () => {
+    console.log(`🚀 Serwer działa! Otwórz: http://localhost:${PORT}`);
 });
