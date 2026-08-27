@@ -28,8 +28,13 @@ const userSchema = new mongoose.Schema({
     password: String,
     isVerified: { type: Boolean, default: false }, 
     verificationToken: String,
-    resetPasswordToken: String,      
-    resetPasswordExpires: Date       
+    resetPasswordToken: String,       
+    resetPasswordExpires: Date,
+    // Indywidualne pola profilowe dla każdego użytkownika:
+    status: { type: String, default: 'free' }, // 'free' lub 'premium'
+    interests: { type: String, default: '' },   // Czyste pole na zainteresowania
+    desc: { type: String, default: '' },       // Czyste pole na opis "O mnie"
+    photo: { type: String, default: '' }       // Indywidualne zdjęcie
 });
 const User = mongoose.model('User', userSchema);
 
@@ -154,8 +159,22 @@ app.post('/api/login', async (req, res) => {
         res.json({
             message: 'Zalogowano pomyślnie!',
             token,
-            user: { name: user.name, age: user.age, city: user.city }
+            user: { 
+                name: user.name, 
+                age: user.age, 
+                city: user.city,
+                status: user.status,
+                interests: user.interests,
+                desc: user.desc,
+                photo: user.photo
+            }
         });
+
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ message: 'Błąd serwera podczas logowania.' });
+    }
+});
 
     } catch (error) {
         console.error(error);
