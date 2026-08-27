@@ -254,3 +254,60 @@ const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
     console.log(`🚀 Serwer działa! Otwórz: http://localhost:${PORT}`);
 });
+
+// --- 10. AKTUALIZACJA PROFILU ---
+app.post('/api/update-profile', async (req, res) => {
+    try {
+        const { email, name, age, city, interests, desc, photo } = req.body;
+
+        const user = await User.findOne({ email });
+        if (!user) {
+            return res.status(404).json({ message: 'Nie znaleziono użytkownika.' });
+        }
+
+        if (name) user.name = name;
+        if (age) user.age = age;
+        if (city) user.city = city;
+        if (interests !== undefined) user.interests = interests;
+        if (desc !== undefined) user.desc = desc;
+        if (photo !== undefined) user.photo = photo;
+
+        await user.save();
+
+        res.json({ 
+            message: 'Profil zaktualizowany pomyślnie!',
+            user: {
+                name: user.name,
+                age: user.age,
+                city: user.city,
+                status: user.status,
+                interests: user.interests,
+                desc: user.desc,
+                photo: user.photo
+            }
+        });
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ message: 'Błąd serwera podczas aktualizacji profilu.' });
+    }
+});
+
+// --- 11. AKTYWACJA PREMIUM ---
+app.post('/api/activate-premium', async (req, res) => {
+    try {
+        const { email } = req.body;
+
+        const user = await User.findOne({ email });
+        if (!user) {
+            return res.status(404).json({ message: 'Nie znaleziono użytkownika.' });
+        }
+
+        user.status = 'premium';
+        await user.save();
+
+        res.json({ message: 'Konto zostało pomyślnie zaktualizowane do wersji Premium! 👑', status: 'premium' });
+    } catch (error) {
+        console.error(error);
+        res.status(500).json({ message: 'Błąd podczas aktywacji pakietu.' });
+    }
+});
