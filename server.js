@@ -426,3 +426,24 @@ app.patch('/api/messages/accept/:id', async (req, res) => {
         res.status(500).json({ message: 'Błąd serwera podczas akceptacji prośby.' });
     }
 });
+
+// --- POBIERANIE PROFILU UŻYTKOWNIKA PO E-MAILU ---
+app.get('/api/user/:email', async (req, res) => {
+    try {
+        const user = await User.findOne({ email: req.params.email });
+        if (!user) {
+            return res.status(404).json({ message: 'Nie znaleziono użytkownika.' });
+        }
+        res.json({
+            name: user.name,
+            age: user.age,
+            city: user.city,
+            interests: user.interests,
+            desc: user.desc,
+            photo: user.photo,
+            joined: '26 sierpnia 2026'
+        });
+    } catch (error) {
+        res.status(500).json({ message: 'Błąd serwera.' });
+    }
+});
