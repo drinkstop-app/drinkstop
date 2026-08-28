@@ -49,7 +49,7 @@ const outingSchema = new mongoose.Schema({
     createdAt: { 
         type: Date, 
         default: Date.now, 
-        expires: 10800 // Automatyczne usunięcie z bazy po 10800 sekundach (3 godziny)
+        expires: 10800 // Automatyczne usunięcie z bazy po 3 godzinach (10800 sekund)
     } 
 });
 const Outing = mongoose.model('Outing', outingSchema);
@@ -81,7 +81,7 @@ async function sendBrevoEmail(toEmail, subject, htmlContent) {
 // --- 4. REJESTRACJA ---
 app.post('/api/register', async (req, res) => {
     try {
-        const { name, email, age, city, password } = req.body;
+        const { name, email, age, city, password, photo } = req.body;
 
         const existingUser = await User.findOne({ email });
         if (existingUser) {
@@ -92,7 +92,7 @@ app.post('/api/register', async (req, res) => {
         const token = crypto.randomBytes(32).toString('hex'); 
 
         const newUser = new User({
-            name, email, age, city, password: hashedPassword, verificationToken: token
+            name, email, age, city, password: hashedPassword, verificationToken: token, photo: photo || ''
         });
 
         await newUser.save();
