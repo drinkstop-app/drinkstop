@@ -399,9 +399,29 @@ app.post('/api/messages', async (req, res) => {
 app.get('/api/messages/:email', async (req, res) => {
     try {
         const { email } = req.params;
-        const messages = await Message.find({ $or: [{ receiverEmail: email }, { senderEmail: email }] });
+        const messages = await Message.find({ 
+            $or: [{ receiverEmail: email }, { senderEmail: email }] 
+        }).sort({ createdAt: 1 }); // Sortowanie od najstarszych do najnowszych
         res.json(messages);
     } catch (error) {
         res.status(500).json({ message: 'Błąd pobierania wiadomości.' });
+    }
+});
+
+// --- AKCEPTACJA PROŚBY ---
+app.patch('/api/messages/accept/:id', async (req, res) => {
+    try {
+        const { id } = req.params;
+        const updatedMessage = await Message.findByIdAndUpdate(
+            id, 
+            { status: 'accepted' }, 
+            { new: true }
+        );
+        if (!updatedMessage) {
+            return res.status(404).json({ message: 'Nie znaleziono prośby.' });
+        }
+        res.json({ message: 'Prośba została zaakceptowana!', data: updatedMessage });
+    } catch (error) {
+        res.status(500).json({ message: 'Błąd serwera podczas akceptacji prośby.' });
     }
 });
