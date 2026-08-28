@@ -30,13 +30,29 @@ const userSchema = new mongoose.Schema({
     verificationToken: String,
     resetPasswordToken: String,       
     resetPasswordExpires: Date,
-    // Indywidualne pola profilowe dla każdego użytkownika:
-    status: { type: String, default: 'free' }, // 'free' lub 'premium'
-    interests: { type: String, default: '' },   // Czyste pole na zainteresowania
-    desc: { type: String, default: '' },       // Czyste pole na opis "O mnie"
-    photo: { type: String, default: '' }       // Indywidualne zdjęcie
+    status: { type: String, default: 'free' },
+    interests: { type: String, default: '' },
+    desc: { type: String, default: '' },
+    photo: { type: String, default: '' }
 });
 const User = mongoose.model('User', userSchema);
+
+// --- SCHEMAT WYJŚCIA (PINEZKI) Z AUTOMATYCZNYM WYGASZANIAM PO GODZINIE ---
+const outingSchema = new mongoose.Schema({
+    userEmail: { type: String, required: true },
+    name: String,
+    city: String,
+    location: String,
+    plans: String,
+    desc: String,
+    coordinates: [Number], // [longitude, latitude]
+    createdAt: { 
+        type: Date, 
+        default: Date.now, 
+        expires: 3600 // Automatyczne usunięcie z bazy po 3600 sekundach (1 godzina)
+    } 
+});
+const Outing = mongoose.model('Outing', outingSchema);
 
 // --- FUNKCJA POMOCNICZA DO WYSYŁKI MAILI PRZEZ API BREVO ---
 async function sendBrevoEmail(toEmail, subject, htmlContent) {
@@ -299,7 +315,57 @@ app.post('/api/activate-premium', async (req, res) => {
     }
 });
 
-// --- 11. START SERWERA ---
+// --- 11. ENDPOINTY DLA PINEZEK (WYJŚĆ) ---
+
+// Pobieranie wszystkich aktywnych wyjść
+app.get('/api/outings', async (req, res) => {
+    try {
+        const outings = await Outing.find({});
+        res.json(outings);
+    } catch (error) {
+        res.status(500).json({ message: 'Błąd pobierania wyjść.' });
+    }
+});
+
+// Tworzenie nowego wyjścia
+app.post('/api/outings', async (req, res) => {
+    try {
+        const { userEmail, name, city, location, plans, desc, coordinates } = req.body;
+        
+        const newOuting = new Outing({
+            userEmail, name, city, location, plans, desc, coordinates
+        });
+
+        await newOuting.save();
+        res.status(201).json({ message: 'Wyjście opublikowane pomyślnie!', outing: newOuting });
+    } catch (error) {
+        res.status(500).json({ message: 'Błąd podczas publikowania wyjścia.' });
+    }
+});
+
+// Ręczne usuwanie wyjścia (tylko przez autora)
+app.delete('/api/outings/:id', async (req, res) => {
+    try {
+        const { id } = req.params;
+        const { email } = req.body;
+
+        const outing = await Outing.findById(id);
+        if (!outing) {
+            return res.status(404).json({ message: 'Nie znaleziono takiego wyjścia.' });
+        }
+
+        if (outing.userEmail !== email) {
+            return res.status(403).json({ message: 'Nie masz uprawnień do usunięcia tej pinezki!' });
+        }
+
+        await Outing.findByIdAndDelete(id);
+        res.json({ message: 'Pinezka została usunięta.' });
+    } catch (error) {
+        res.status(500).json({ message: 'Błąd serwera podczas usuwania.' });
+    }
+});
+
+// --- 12. START SERWERA ---
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
     console.log(`🚀 Serwer działa! Otwórz: http://localhost:${PORT}`);
