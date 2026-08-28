@@ -370,3 +370,38 @@ const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
     console.log(`🚀 Serwer działa! Otwórz: http://localhost:${PORT}`);
 });
+
+// --- SCHEMAT PROŚB I WIADOMOŚCI ---
+const messageSchema = new mongoose.Schema({
+    senderEmail: String,
+    senderName: String,
+    receiverEmail: String,
+    message: String,
+    type: { type: String, default: 'chat' }, // 'chat' lub 'request'
+    status: { type: String, default: 'pending' }, // 'pending', 'accepted', 'rejected'
+    createdAt: { type: Date, default: Date.now }
+});
+const Message = mongoose.model('Message', messageSchema);
+
+// --- WYSŁANIE PROŚBY / WIADOMOŚCI ---
+app.post('/api/messages', async (req, res) => {
+    try {
+        const { senderEmail, senderName, receiverEmail, message, type } = req.body;
+        const newMessage = new Message({ senderEmail, senderName, receiverEmail, message, type });
+        await newMessage.save();
+        res.status(201).json({ message: 'Wiadomość wysłana pomyślnie!', data: newMessage });
+    } catch (error) {
+        res.status(500).json({ message: 'Błąd podczas wysyłania wiadomości.' });
+    }
+});
+
+// --- POBIERANIE WIADOMOŚCI/PROŚB DANEGO UŻYTKOWNIKA ---
+app.get('/api/messages/:email', async (req, res) => {
+    try {
+        const { email } = req.params;
+        const messages = await Message.find({ $or: [{ receiverEmail: email }, { senderEmail: email }] });
+        res.json(messages);
+    } catch (error) {
+        res.status(500).json({ message: 'Błąd pobierania wiadomości.' });
+    }
+});
