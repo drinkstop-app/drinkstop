@@ -376,9 +376,10 @@ const messageSchema = new mongoose.Schema({
     senderEmail: String,
     senderName: String,
     receiverEmail: String,
+    receiverName: String, // <-- Dodane pole
     message: String,
-    type: { type: String, default: 'chat' }, // 'chat' lub 'request'
-    status: { type: String, default: 'pending' }, // 'pending', 'accepted', 'rejected'
+    type: { type: String, default: 'chat' }, 
+    status: { type: String, default: 'pending' }, 
     createdAt: { type: Date, default: Date.now }
 });
 const Message = mongoose.model('Message', messageSchema);
@@ -386,8 +387,8 @@ const Message = mongoose.model('Message', messageSchema);
 // --- WYSŁANIE PROŚBY / WIADOMOŚCI ---
 app.post('/api/messages', async (req, res) => {
     try {
-        const { senderEmail, senderName, receiverEmail, message, type } = req.body;
-        const newMessage = new Message({ senderEmail, senderName, receiverEmail, message, type });
+        const { senderEmail, senderName, receiverEmail, receiverName, message, type } = req.body;
+        const newMessage = new Message({ senderEmail, senderName, receiverEmail, receiverName, message, type });
         await newMessage.save();
         res.status(201).json({ message: 'Wiadomość wysłana pomyślnie!', data: newMessage });
     } catch (error) {
