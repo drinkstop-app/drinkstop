@@ -28,7 +28,7 @@ const userSchema = new mongoose.Schema({
     password: String,
     isVerified: { type: Boolean, default: false }, 
     verificationToken: String,
-    resetPasswordToken: String,       
+    resetPasswordToken: String,        
     resetPasswordExpires: Date,
     status: { type: String, default: 'free' },
     interests: { type: String, default: '' },
@@ -37,7 +37,7 @@ const userSchema = new mongoose.Schema({
 });
 const User = mongoose.model('User', userSchema);
 
-// --- SCHEMAT WYJŚCIA (PINEZKI) Z AUTOMATYCZNYM WYGASZANIAM PO GODZINIE ---
+// --- SCHEMAT WYJŚCIA (PINEZKI) Z AUTOMATYCZNYM WYGASZANIAM PO 3 GODZINACH ---
 const outingSchema = new mongoose.Schema({
     userEmail: { type: String, required: true },
     name: String,
@@ -49,7 +49,7 @@ const outingSchema = new mongoose.Schema({
     createdAt: { 
         type: Date, 
         default: Date.now, 
-        expires: 3600 // Automatyczne usunięcie z bazy po 3600 sekundach (1 godzina)
+        expires: 10800 // Automatyczne usunięcie z bazy po 10800 sekundach (3 godziny)
     } 
 });
 const Outing = mongoose.model('Outing', outingSchema);
@@ -376,7 +376,7 @@ const messageSchema = new mongoose.Schema({
     senderEmail: String,
     senderName: String,
     receiverEmail: String,
-    receiverName: String, // <-- Dodane pole
+    receiverName: String, 
     message: String,
     type: { type: String, default: 'chat' }, 
     status: { type: String, default: 'pending' }, 
