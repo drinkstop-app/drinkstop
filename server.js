@@ -34,7 +34,9 @@ const userSchema = new mongoose.Schema({
     interests: { type: String, default: '' },
     desc: { type: String, default: '' },
     photo: { type: String, default: '' },
-    marketingConsent: { type: Boolean, default: false } // <-- TO DOPISUJEMY TUTAJ
+    marketingConsent: { type: Boolean, default: false },
+    deletionRequested: { type: Boolean, default: false }, // <-- TUTAJ
+    deletionDate: { type: Date, default: null }             // <-- TUTAJ
 });
 const User = mongoose.model('User', userSchema);
 
