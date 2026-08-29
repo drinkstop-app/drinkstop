@@ -457,3 +457,41 @@ app.get('/api/user/:email', async (req, res) => {
         res.status(500).json({ message: 'Błąd serwera.' });
     }
 });
+
+// --- 13. ŻĄDANIE USUNIĘCIA KONTA ---
+app.post('/api/request-deletion', async (req, res) => {
+    try {
+        const { email } = req.body;
+        const user = await User.findOne({ email });
+
+        if (!user) {
+            return res.status(404).json({ message: 'Nie znaleziono użytkownika.' });
+        }
+
+        user.deletionRequested = true;
+        user.deletionDate = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000); // 30 dni od teraz
+        await user.save();
+
+        // Wysyłka e-maila pożegnalnego przez Brevo
+        await sendBrevoEmail(
+            email,
+            'Szkoda, że odchodzisz z Drink Stop 😢',
+            `
+                <div style="font-family: Arial, sans-serif; text-align: center; padding: 20px; background-color: #f9f9f9; border-radius: 10px;">
+                    <h2 style="color: #ff4757; margin-bottom: 10px;">Z przykrością przyjęliśmy Twoją prośbę</h2>
+                    <p style="color: #333; font-size: 15px;">Otrzymaliśmy zgłoszenie usunięcia Twojego konta w aplikacji <b>Drink Stop</b>.</p>
+                    <p style="color: #555; font-size: 14px;">Twoje konto zostanie całkowicie usunięte za <b>30 dni</b>. Jeśli zmienisz zdanie, wystarczy, że po prostu zalogujesz się ponownie przed upływem tego terminu, a proces usuwania zostanie automatycznie anulowany.</p>
+                    <hr style="border: none; border-top: 1px solid #ddd; margin: 30px 0 20px 0;">
+                    <p style="color: #888; font-size: 12px; line-height: 1.5; margin: 0;">
+                        Pozdrawiamy,<br>Zespół Drink Stop 🍻
+                    </p>
+                </div>
+            `
+        );
+
+        res.json({ message: 'Zlecono usunięcie konta i wysłano e-mail.' });
+    } catch (error) {
+        console.error('Błąd usuwania konta:', error);
+        res.status(500).json({ message: 'Błąd serwera podczas żądania usunięcia konta.' });
+    }
+});
