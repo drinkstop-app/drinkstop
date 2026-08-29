@@ -170,6 +170,14 @@ app.post('/api/login', async (req, res) => {
             return res.status(400).json({ message: 'Nie znaleziono konta z tym adresem e-mail.' });
         }
 
+        // --- TUTAJ DOPISZ TEN FRAGMENT: ---
+        if (user.deletionRequested) {
+            user.deletionRequested = false;
+            user.deletionDate = null;
+            await user.save();
+        }
+        // ----------------------------------
+
         if (!user.isVerified) {
             return res.status(403).json({ message: 'Konto nie jest aktywne! Kliknij w link wysłany na Twój e-mail.' });
         }
@@ -178,6 +186,8 @@ app.post('/api/login', async (req, res) => {
         if (!isMatch) {
             return res.status(400).json({ message: 'Błędne hasło. Spróbuj ponownie.' });
         }
+        
+        // ... dalsza część logowania bez zmian ...
 
         const token = jwt.sign({ id: user._id }, 'nasz_tajny_klucz_123', { expiresIn: '7d' });
 
