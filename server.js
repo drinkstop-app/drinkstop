@@ -33,7 +33,8 @@ const userSchema = new mongoose.Schema({
     status: { type: String, default: 'free' },
     interests: { type: String, default: '' },
     desc: { type: String, default: '' },
-    photo: { type: String, default: '' }
+    photo: { type: String, default: '' },
+    marketingConsent: { type: Boolean, default: false } // <-- TO DOPISUJEMY TUTAJ
 });
 const User = mongoose.model('User', userSchema);
 
@@ -81,7 +82,7 @@ async function sendBrevoEmail(toEmail, subject, htmlContent) {
 // --- 4. REJESTRACJA ---
 app.post('/api/register', async (req, res) => {
     try {
-        const { name, email, age, city, password, photo } = req.body;
+        const { name, email, age, city, password, photo, marketingConsent } = req.body; // <-- Tutaj dodane marketingConsent
 
         const existingUser = await User.findOne({ email });
         if (existingUser) {
@@ -92,7 +93,14 @@ app.post('/api/register', async (req, res) => {
         const token = crypto.randomBytes(32).toString('hex'); 
 
         const newUser = new User({
-            name, email, age, city, password: hashedPassword, verificationToken: token, photo: photo || ''
+            name, 
+            email, 
+            age, 
+            city, 
+            password: hashedPassword, 
+            verificationToken: token, 
+            photo: photo || '',
+            marketingConsent: marketingConsent || false // <-- Tutaj zapisujemy w bazie
         });
 
         await newUser.save();
