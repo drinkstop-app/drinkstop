@@ -170,13 +170,29 @@ app.post('/api/login', async (req, res) => {
             return res.status(400).json({ message: 'Nie znaleziono konta z tym adresem e-mail.' });
         }
 
-        // --- TUTAJ DOPISZ TEN FRAGMENT: ---
+        // --- TUTAJ WKLEJAMY CAŁY TEN FRAGMENT Z MAILEM ---
         if (user.deletionRequested) {
             user.deletionRequested = false;
             user.deletionDate = null;
             await user.save();
+
+            await sendBrevoEmail(
+                email,
+                'Super, że wracasz! Konto zostało uratowane 🍻',
+                `
+                    <div style="font-family: Arial, sans-serif; text-align: center; padding: 20px; background-color: #f9f9f9; border-radius: 10px;">
+                        <h2 style="color: #90c83a; margin-bottom: 10px;">Cieszymy się, że z nami zostajesz!</h2>
+                        <p style="color: #333; font-size: 15px;">Zauważyliśmy, że zalogowałeś się ponownie do aplikacji <b>Drink Stop</b>.</p>
+                        <p style="color: #555; font-size: 14px;">Procedura usuwania Twojego konta została <b>automatycznie anulowana</b>. Wszystkie Twoje dane i pinezki są w pełni bezpieczne.</p>
+                        <hr style="border: none; border-top: 1px solid #ddd; margin: 30px 0 20px 0;">
+                        <p style="color: #888; font-size: 12px; line-height: 1.5; margin: 0;">
+                            Pozdrawiamy,<br>Zespół Drink Stop 🍻
+                        </p>
+                    </div>
+                `
+            );
         }
-        // ----------------------------------
+        // ------------------------------------------------
 
         if (!user.isVerified) {
             return res.status(403).json({ message: 'Konto nie jest aktywne! Kliknij w link wysłany na Twój e-mail.' });
@@ -187,8 +203,6 @@ app.post('/api/login', async (req, res) => {
             return res.status(400).json({ message: 'Błędne hasło. Spróbuj ponownie.' });
         }
         
-        // ... dalsza część logowania bez zmian ...
-
         const token = jwt.sign({ id: user._id }, 'nasz_tajny_klucz_123', { expiresIn: '7d' });
 
         res.json({
