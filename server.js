@@ -35,8 +35,9 @@ const userSchema = new mongoose.Schema({
     desc: { type: String, default: '' },
     photo: { type: String, default: '' },
     marketingConsent: { type: Boolean, default: false },
-    deletionRequested: { type: Boolean, default: false }, // <-- TUTAJ
-    deletionDate: { type: Date, default: null }             // <-- TUTAJ
+    deletionRequested: { type: Boolean, default: false },
+    deletionDate: { type: Date, default: null },
+    eventCredits: { type: Number, default: 0 } // Pula pakietów B2B dla eventów
 });
 const User = mongoose.model('User', userSchema);
 
@@ -84,7 +85,7 @@ async function sendBrevoEmail(toEmail, subject, htmlContent) {
 // --- 4. REJESTRACJA ---
 app.post('/api/register', async (req, res) => {
     try {
-        const { name, email, age, city, password, photo, marketingConsent } = req.body; // <-- Tutaj dodane marketingConsent
+        const { name, email, age, city, password, photo, marketingConsent } = req.body;
 
         const existingUser = await User.findOne({ email });
         if (existingUser) {
@@ -102,7 +103,7 @@ app.post('/api/register', async (req, res) => {
             password: hashedPassword, 
             verificationToken: token, 
             photo: photo || '',
-            marketingConsent: marketingConsent || false // <-- Tutaj zapisujemy w bazie
+            marketingConsent: marketingConsent || false
         });
 
         await newUser.save();
@@ -170,7 +171,6 @@ app.post('/api/login', async (req, res) => {
             return res.status(400).json({ message: 'Nie znaleziono konta z tym adresem e-mail.' });
         }
 
-        // --- TUTAJ WKLEJAMY CAŁY TEN FRAGMENT Z MAILEM ---
         if (user.deletionRequested) {
             user.deletionRequested = false;
             user.deletionDate = null;
@@ -192,7 +192,6 @@ app.post('/api/login', async (req, res) => {
                 `
             );
         }
-        // ------------------------------------------------
 
         if (!user.isVerified) {
             return res.status(403).json({ message: 'Konto nie jest aktywne! Kliknij w link wysłany na Twój e-mail.' });
@@ -215,7 +214,8 @@ app.post('/api/login', async (req, res) => {
                 status: user.status,
                 interests: user.interests,
                 desc: user.desc,
-                photo: user.photo
+                photo: user.photo,
+                eventCredits: user.eventCredits || 0
             }
         });
 
@@ -320,7 +320,8 @@ app.post('/api/update-profile', async (req, res) => {
                 status: user.status,
                 interests: user.interests,
                 desc: user.desc,
-                photo: user.photo
+                photo: user.photo,
+                eventCredits: user.eventCredits || 0
             }
         });
     } catch (error) {
@@ -346,6 +347,38 @@ app.post('/api/activate-premium', async (req, res) => {
     } catch (error) {
         console.error(error);
         res.status(500).json({ message: 'Błąd podczas aktywacji pakietu.' });
+    }
+});
+
+// --- 10.1 TESTOWY ENDPOINT PŁATNOŚCI (SIMULATOR) ---
+app.post('/api/test-payment', async (req, res) => {
+    try {
+        const { email, type, plan } = req.body; 
+        // type: 'premium' lub 'b2b'
+        // plan: 'weekly', 'monthly' (dla premium) lub '1', '5', '10' (dla b2b)
+
+        const user = await User.findOne({ email });
+        if (!user) {
+            return res.status(404).json({ message: 'Nie znaleziono użytkownika.' });
+        }
+
+        if (type === 'premium') {
+            user.status = 'premium';
+            await user.save();
+            return res.json({ message: 'Płatność testowa zakończona sukcesem! Konto Premium aktywowane.', status: 'premium' });
+        } 
+        
+        if (type === 'b2b') {
+            const addedCredits = plan === '1' ? 1 : plan === '5' ? 5 : plan === '10' ? 10 : 0;
+            user.eventCredits = (user.eventCredits || 0) + addedCredits;
+            await user.save();
+            return res.json({ message: `Płatność testowa zakończona sukcesem! Dodano ${addedCredits} oznaczeń eventowych.`, eventCredits: user.eventCredits });
+        }
+
+        res.status(400).json({ message: 'Nieznany typ płatności.' });
+    } catch (error) {
+        console.error('Błąd testowej płatności:', error);
+        res.status(500).json({ message: 'Błąd serwera podczas przetwarzania płatności.' });
     }
 });
 
@@ -399,12 +432,6 @@ app.delete('/api/outings/:id', async (req, res) => {
     }
 });
 
-// --- 12. START SERWERA ---
-const PORT = process.env.PORT || 5000;
-app.listen(PORT, () => {
-    console.log(`🚀 Serwer działa! Otwórz: http://localhost:${PORT}`);
-});
-
 // --- SCHEMAT PROŚB I WIADOMOŚCI ---
 const messageSchema = new mongoose.Schema({
     senderEmail: String,
@@ -436,7 +463,7 @@ app.get('/api/messages/:email', async (req, res) => {
         const { email } = req.params;
         const messages = await Message.find({ 
             $or: [{ receiverEmail: email }, { senderEmail: email }] 
-        }).sort({ createdAt: 1 }); // Sortowanie od najstarszych do najnowszych
+        }).sort({ createdAt: 1 });
         res.json(messages);
     } catch (error) {
         res.status(500).json({ message: 'Błąd pobierania wiadomości.' });
@@ -475,7 +502,8 @@ app.get('/api/user/:email', async (req, res) => {
             interests: user.interests,
             desc: user.desc,
             photo: user.photo,
-            joined: '26 sierpnia 2026'
+            joined: '26 sierpnia 2026',
+            eventCredits: user.eventCredits || 0
         });
     } catch (error) {
         res.status(500).json({ message: 'Błąd serwera.' });
@@ -493,10 +521,9 @@ app.post('/api/request-deletion', async (req, res) => {
         }
 
         user.deletionRequested = true;
-        user.deletionDate = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000); // 30 dni od teraz
+        user.deletionDate = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
         await user.save();
 
-        // Wysyłka e-maila pożegnalnego przez Brevo
         await sendBrevoEmail(
             email,
             'Szkoda, że odchodzisz z Drink Stop 😢',
@@ -518,4 +545,10 @@ app.post('/api/request-deletion', async (req, res) => {
         console.error('Błąd usuwania konta:', error);
         res.status(500).json({ message: 'Błąd serwera podczas żądania usunięcia konta.' });
     }
+});
+
+// --- 12. START SERWERA ---
+const PORT = process.env.PORT || 5000;
+app.listen(PORT, () => {
+    console.log(`🚀 Serwer działa! Otwórz: http://localhost:${PORT}`);
 });
