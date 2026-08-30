@@ -12,6 +12,26 @@ const app = express();
 app.use(express.json());
 app.use(cors());
 
+const JWT_SECRET = process.env.JWT_SECRET || 'nasz_tajny_klucz_123';
+
+// --- MIDDLEWARE DO WERYFIKACJI JWT ---
+const authMiddleware = (req, res, next) => {
+    const authHeader = req.headers['authorization'];
+    const token = authHeader && authHeader.split(' ')[1]; // Bearer TOKEN
+
+    if (!token) {
+        return res.status(401).json({ message: 'Brak tokenu autoryzacyjnego. Zaloguj się ponownie.' });
+    }
+
+    jwt.verify(token, JWT_SECRET, (err, user) => {
+        if (err) {
+            return res.status(403).json({ message: 'Nieprawidłowy lub wygasły token.' });
+        }
+        req.user = user; // { id: ... }
+        next();
+    });
+};
+
 // --- 1. POŁĄCZENIE Z BAZĄ DANYCH ---
 const dbLink = process.env.MONGO_URI;
 
@@ -37,12 +57,13 @@ const userSchema = new mongoose.Schema({
     marketingConsent: { type: Boolean, default: false },
     deletionRequested: { type: Boolean, default: false },
     deletionDate: { type: Date, default: null },
-    eventCredits: { type: Number, default: 0 } // Pula pakietów B2B dla eventów
+    eventCredits: { type: Number, default: 0 }
 });
 const User = mongoose.model('User', userSchema);
 
-// --- SCHEMAT WYJŚCIA (PINEZKI) Z AUTOMATYCZNYM WYGASZANIAM PO 3 GODZINACH ---
+// --- SCHEMAT WYJŚCIA (PINEZKI) ---
 const outingSchema = new mongoose.Schema({
+    userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true }, // Powiązanie z właścicielem
     userEmail: { type: String, required: true },
     name: String,
     city: String,
@@ -53,7 +74,7 @@ const outingSchema = new mongoose.Schema({
     createdAt: { 
         type: Date, 
         default: Date.now, 
-        expires: 10800 // Automatyczne usunięcie z bazy po 3 godzinach (10800 sekund)
+        expires: 10800 // Automatyczne usunięcie po 3h
     } 
 });
 const Outing = mongoose.model('Outing', outingSchema);
@@ -119,24 +140,15 @@ app.post('/api/register', async (req, res) => {
                 <div style="font-family: Arial, sans-serif; text-align: center; padding: 20px; background-color: #f9f9f9; border-radius: 10px;">
                     <h2 style="color: #f5a623; margin-bottom: 10px;">Witaj w Drink Stop, ${name}!</h2>
                     <p style="color: #333; font-size: 15px;">Aby w pełni korzystać z aplikacji, aktywuj swoje konto:</p>
-                    
                     <a href="${verificationLink}" style="display: inline-block; padding: 12px 24px; background-color: #f5a623; color: #000; text-decoration: none; border-radius: 8px; font-weight: bold; margin: 20px 0;">Aktywuj konto 🍻</a>
-                    
-                    <hr style="border: none; border-top: 1px solid #ddd; margin: 30px 0 20px 0;">
-                    
-                    <p style="color: #888; font-size: 12px; line-height: 1.5; margin: 0;">
-                        Wiadomość została wygenerowana automatycznie, prosimy na nią nie odpowiadać.<br>
-                        Jeśli to nie Ty zakładałeś konto w aplikacji Drink Stop, po prostu zignoruj tę wiadomość.
-                    </p>
                 </div>
             `
         );
 
         res.status(201).json({ message: 'Konto utworzone! Sprawdź swoją skrzynkę e-mail, aby je aktywować.' });
-
     } catch (error) {
-        console.error('Błąd wysyłki e-maila:', error);
-        res.status(500).json({ message: 'Wystąpił błąd serwera podczas wysyłania e-maila' });
+        console.error('Błąd rejestracji:', error);
+        res.status(500).json({ message: 'Wystąpił błąd serwera.' });
     }
 });
 
@@ -175,22 +187,6 @@ app.post('/api/login', async (req, res) => {
             user.deletionRequested = false;
             user.deletionDate = null;
             await user.save();
-
-            await sendBrevoEmail(
-                email,
-                'Super, że wracasz! Konto zostało uratowane 🍻',
-                `
-                    <div style="font-family: Arial, sans-serif; text-align: center; padding: 20px; background-color: #f9f9f9; border-radius: 10px;">
-                        <h2 style="color: #90c83a; margin-bottom: 10px;">Cieszymy się, że z nami zostajesz!</h2>
-                        <p style="color: #333; font-size: 15px;">Zauważyliśmy, że zalogowałeś się ponownie do aplikacji <b>Drink Stop</b>.</p>
-                        <p style="color: #555; font-size: 14px;">Procedura usuwania Twojego konta została <b>automatycznie anulowana</b>. Wszystkie Twoje dane i pinezki są w pełni bezpieczne.</p>
-                        <hr style="border: none; border-top: 1px solid #ddd; margin: 30px 0 20px 0;">
-                        <p style="color: #888; font-size: 12px; line-height: 1.5; margin: 0;">
-                            Pozdrawiamy,<br>Zespół Drink Stop 🍻
-                        </p>
-                    </div>
-                `
-            );
         }
 
         if (!user.isVerified) {
@@ -202,13 +198,15 @@ app.post('/api/login', async (req, res) => {
             return res.status(400).json({ message: 'Błędne hasło. Spróbuj ponownie.' });
         }
         
-        const token = jwt.sign({ id: user._id }, 'nasz_tajny_klucz_123', { expiresIn: '7d' });
+        const token = jwt.sign({ id: user._id, email: user.email }, JWT_SECRET, { expiresIn: '7d' });
 
         res.json({
             message: 'Zalogowano pomyślnie!',
             token,
             user: { 
+                id: user._id,
                 name: user.name, 
+                email: user.email,
                 age: user.age, 
                 city: user.city,
                 status: user.status,
@@ -218,7 +216,6 @@ app.post('/api/login', async (req, res) => {
                 eventCredits: user.eventCredits || 0
             }
         });
-
     } catch (error) {
         console.error(error);
         res.status(500).json({ message: 'Błąd serwera podczas logowania.' });
@@ -230,37 +227,18 @@ app.post('/api/forgot-password', async (req, res) => {
     try {
         const { email } = req.body;
         const user = await User.findOne({ email });
-        
-        if (!user) {
-            return res.status(400).json({ message: 'Nie znaleziono konta z tym adresem e-mail.' });
-        }
+        if (!user) return res.status(400).json({ message: 'Nie znaleziono konta.' });
 
         const token = crypto.randomBytes(32).toString('hex');
         user.resetPasswordToken = token;
         user.resetPasswordExpires = Date.now() + 15 * 60 * 1000; 
         await user.save();
 
-        const protocol = req.protocol;
-        const host = req.get('host');
-        const resetLink = `${protocol}://${host}/reset.html?token=${token}`;
+        const resetLink = `${req.protocol}://${req.get('host')}/reset.html?token=${token}`;
+        await sendBrevoEmail(email, 'Resetowanie hasła w Drink Stop 🔑', `<a href="${resetLink}">Zresetuj hasło</a>`);
 
-        await sendBrevoEmail(
-            email,
-            'Resetowanie hasła w Drink Stop 🔑',
-            `
-                <div style="font-family: Arial, sans-serif; text-align: center; padding: 20px;">
-                    <h2 style="color: #f5a623;">Resetowanie hasła</h2>
-                    <p>Otrzymaliśmy prośbę o zresetowanie hasła do Twojego konta. Kliknij w poniższy przycisk:</p>
-                    <a href="${resetLink}" style="display: inline-block; padding: 12px 24px; background-color: #f5a623; color: #000; text-decoration: none; border-radius: 8px; font-weight: bold; margin-top: 20px;">Zresetuj hasło 🔑</a>
-                    <p style="margin-top: 20px; font-size: 12px; color: #888;">Link jest ważny przez 15 minut.</p>
-                </div>
-            `
-        );
-
-        res.json({ message: 'Link do resetowania hasła został wysłany na Twój e-mail!' });
-
+        res.json({ message: 'Link do resetowania hasła został wysłany!' });
     } catch (error) {
-        console.error(error);
         res.status(500).json({ message: 'Błąd serwera.' });
     }
 });
@@ -269,38 +247,26 @@ app.post('/api/forgot-password', async (req, res) => {
 app.post('/api/reset-password', async (req, res) => {
     try {
         const { token, newPassword } = req.body;
-
-        const user = await User.findOne({
-            resetPasswordToken: token,
-            resetPasswordExpires: { $gt: Date.now() }
-        });
-
-        if (!user) {
-            return res.status(400).json({ message: 'Token jest nieprawidłowy lub wygasł.' });
-        }
+        const user = await User.findOne({ resetPasswordToken: token, resetPasswordExpires: { $gt: Date.now() } });
+        if (!user) return res.status(400).json({ message: 'Token jest nieprawidłowy lub wygasł.' });
 
         user.password = await bcrypt.hash(newPassword, 10);
         user.resetPasswordToken = undefined;
         user.resetPasswordExpires = undefined;
         await user.save();
 
-        res.json({ message: 'Hasło zostało pomyślnie zmienione! Możesz się teraz zalogować.' });
-
+        res.json({ message: 'Hasło zostało pomyślnie zmienione!' });
     } catch (error) {
-        console.error(error);
         res.status(500).json({ message: 'Błąd serwera.' });
     }
 });
 
-// --- 9. AKTUALIZACJA PROFILU ---
-app.post('/api/update-profile', async (req, res) => {
+// --- 9. AKTUALIZACJA PROFILU (ZABEZPIECZONA TOKENEM) ---
+app.post('/api/update-profile', authMiddleware, async (req, res) => {
     try {
-        const { email, name, age, city, interests, desc, photo } = req.body;
-
-        const user = await User.findOne({ email });
-        if (!user) {
-            return res.status(404).json({ message: 'Nie znaleziono użytkownika.' });
-        }
+        const { name, age, city, interests, desc, photo } = req.body;
+        const user = await User.findById(req.user.id);
+        if (!user) return res.status(404).json({ message: 'Nie znaleziono użytkownika.' });
 
         if (name) user.name = name;
         if (age) user.age = age;
@@ -314,7 +280,9 @@ app.post('/api/update-profile', async (req, res) => {
         res.json({ 
             message: 'Profil zaktualizowany pomyślnie!',
             user: {
+                id: user._id,
                 name: user.name,
+                email: user.email,
                 age: user.age,
                 city: user.city,
                 status: user.status,
@@ -325,57 +293,33 @@ app.post('/api/update-profile', async (req, res) => {
             }
         });
     } catch (error) {
-        console.error(error);
-        res.status(500).json({ message: 'Błąd serwera podczas aktualizacji profilu.' });
+        res.status(500).json({ message: 'Błąd serwera.' });
     }
 });
 
-// --- 10. AKTYWACJA PREMIUM ---
-app.post('/api/activate-premium', async (req, res) => {
+// --- 10. TESTOWY ENDPOINT PŁATNOŚCI (ZABEZPIECZONY TOKENEM) ---
+app.post('/api/test-payment', authMiddleware, async (req, res) => {
     try {
-        const { email } = req.body;
-
-        const user = await User.findOne({ email });
-        if (!user) {
-            return res.status(404).json({ message: 'Nie znaleziono użytkownika.' });
-        }
-
-        user.status = 'premium';
-        await user.save();
-
-        res.json({ message: 'Konto zostało pomyślnie zaktualizowane do wersji Premium! 👑', status: 'premium' });
-    } catch (error) {
-        console.error(error);
-        res.status(500).json({ message: 'Błąd podczas aktywacji pakietu.' });
-    }
-});
-
-// --- 10.1 TESTOWY ENDPOINT PŁATNOŚCI (SIMULATOR) ---
-app.post('/api/test-payment', async (req, res) => {
-    try {
-        const { email, type, plan } = req.body; 
-        const user = await User.findOne({ email });
-        if (!user) {
-            return res.status(404).json({ message: 'Nie znaleziono użytkownika.' });
-        }
+        const { type, plan } = req.body; 
+        const user = await User.findById(req.user.id);
+        if (!user) return res.status(404).json({ message: 'Nie znaleziono użytkownika.' });
 
         if (type === 'premium') {
             user.status = 'premium';
             await user.save();
-            return res.json({ message: 'Płatność testowa zakończona sukcesem! Konto Premium aktywowane.', status: 'premium' });
+            return res.json({ message: 'Konto Premium aktywowane!', status: 'premium' });
         } 
         
         if (type === 'b2b') {
             const addedCredits = plan === '1' ? 1 : plan === '5' ? 5 : plan === '10' ? 10 : 0;
             user.eventCredits = (user.eventCredits || 0) + addedCredits;
             await user.save();
-            return res.json({ message: `Płatność testowa zakończona sukcesem! Dodano ${addedCredits} oznaczeń eventowych.`, eventCredits: user.eventCredits });
+            return res.json({ message: `Dodano ${addedCredits} oznaczeń eventowych.`, eventCredits: user.eventCredits });
         }
 
         res.status(400).json({ message: 'Nieznany typ płatności.' });
     } catch (error) {
-        console.error('Błąd testowej płatności:', error);
-        res.status(500).json({ message: 'Błąd serwera podczas przetwarzania płatności.' });
+        res.status(500).json({ message: 'Błąd serwera.' });
     }
 });
 
@@ -390,11 +334,16 @@ app.get('/api/outings', async (req, res) => {
     }
 });
 
-app.post('/api/outings', async (req, res) => {
+// Tworzenie pinezki powiązane z zalogowanym użytkownikiem
+app.post('/api/outings', authMiddleware, async (req, res) => {
     try {
-        const { userEmail, name, city, location, plans, desc, coordinates } = req.body;
+        const { name, city, location, plans, desc, coordinates } = req.body;
+        const user = await User.findById(req.user.id);
+
         const newOuting = new Outing({
-            userEmail, name, city, location, plans, desc, coordinates
+            userId: user._id,
+            userEmail: user.email,
+            name, city, location, plans, desc, coordinates
         });
 
         await newOuting.save();
@@ -404,17 +353,18 @@ app.post('/api/outings', async (req, res) => {
     }
 });
 
-app.delete('/api/outings/:id', async (req, res) => {
+// Usunięcie pinezki – sprawdza czy zalogowany użytkownik jest jej właścicielem!
+app.delete('/api/outings/:id', authMiddleware, async (req, res) => {
     try {
         const { id } = req.params;
-        const { email } = req.body;
-
         const outing = await Outing.findById(id);
+
         if (!outing) {
             return res.status(404).json({ message: 'Nie znaleziono takiego wyjścia.' });
         }
 
-        if (outing.userEmail !== email) {
+        // Weryfikacja właściciela po ID użytkownika z tokenu JWT
+        if (outing.userId.toString() !== req.user.id) {
             return res.status(403).json({ message: 'Nie masz uprawnień do usunięcia tej pinezki!' });
         }
 
@@ -425,7 +375,7 @@ app.delete('/api/outings/:id', async (req, res) => {
     }
 });
 
-// --- SCHEMAT PROŚB I WIADOMOŚCI ---
+// --- WIADOMOŚCI I CHAT ---
 const messageSchema = new mongoose.Schema({
     senderEmail: String,
     senderName: String,
@@ -434,97 +384,37 @@ const messageSchema = new mongoose.Schema({
     message: String,
     type: { type: String, default: 'chat' }, 
     status: { type: String, default: 'pending' }, 
-    deliveryStatus: { type: String, default: 'sent' }, // 'sent' (1 szary), 'delivered' (2 szare), 'read' (2 niebieskie)
+    deliveryStatus: { type: String, default: 'sent' },
     createdAt: { type: Date, default: Date.now }
 });
 const Message = mongoose.model('Message', messageSchema);
 
-// --- WYSŁANIE PROŚBY / WIADOMOŚCI ---
 app.post('/api/messages', async (req, res) => {
     try {
         const { senderEmail, senderName, receiverEmail, receiverName, message, type } = req.body;
-        const newMessage = new Message({ 
-            senderEmail, 
-            senderName, 
-            receiverEmail, 
-            receiverName, 
-            message, 
-            type, 
-            deliveryStatus: 'sent' 
-        });
+        const newMessage = new Message({ senderEmail, senderName, receiverEmail, receiverName, message, type, deliveryStatus: 'sent' });
         await newMessage.save();
-        res.status(201).json({ message: 'Wiadomość wysłana pomyślnie!', data: newMessage });
-    } catch (error) {
-        res.status(500).json({ message: 'Błąd podczas wysyłania wiadomości.' });
-    }
-});
-
-// --- OZNACZENIE JAKO DOSTARCZONE ---
-app.post('/api/messages/delivered', async (req, res) => {
-    try {
-        const { myEmail } = req.body;
-        await Message.updateMany(
-            { receiverEmail: myEmail, deliveryStatus: 'sent' },
-            { $set: { deliveryStatus: 'delivered' } }
-        );
-        res.json({ message: 'Wiadomości oznaczone jako dostarczone.' });
+        res.status(201).json({ message: 'Wysłano!', data: newMessage });
     } catch (error) {
         res.status(500).json({ message: 'Błąd.' });
     }
 });
 
-// --- OZNACZENIE JAKO ODCZYTANE ---
-app.post('/api/messages/read', async (req, res) => {
-    try {
-        const { myEmail, partnerEmail } = req.body;
-        await Message.updateMany(
-            { senderEmail: partnerEmail, receiverEmail: myEmail, deliveryStatus: { $ne: 'read' } },
-            { $set: { deliveryStatus: 'read' } }
-        );
-        res.json({ message: 'Wiadomości oznaczone jako przeczytane.' });
-    } catch (error) {
-        res.status(500).json({ message: 'Błąd.' });
-    }
-});
-
-// --- POBIERANIE WIADOMOŚCI/PROŚB DANEGO UŻYTKOWNIKA ---
 app.get('/api/messages/:email', async (req, res) => {
     try {
         const { email } = req.params;
-        const messages = await Message.find({ 
-            $or: [{ receiverEmail: email }, { senderEmail: email }] 
-        }).sort({ createdAt: 1 });
+        const messages = await Message.find({ $or: [{ receiverEmail: email }, { senderEmail: email }] }).sort({ createdAt: 1 });
         res.json(messages);
     } catch (error) {
-        res.status(500).json({ message: 'Błąd pobierania wiadomości.' });
+        res.status(500).json({ message: 'Błąd.' });
     }
 });
 
-// --- AKCEPTACJA PROŚBY ---
-app.patch('/api/messages/accept/:id', async (req, res) => {
-    try {
-        const { id } = req.params;
-        const updatedMessage = await Message.findByIdAndUpdate(
-            id, 
-            { status: 'accepted' }, 
-            { new: true }
-        );
-        if (!updatedMessage) {
-            return res.status(404).json({ message: 'Nie znaleziono prośby.' });
-        }
-        res.json({ message: 'Prośba została zaakceptowana!', data: updatedMessage });
-    } catch (error) {
-        res.status(500).json({ message: 'Błąd serwera podczas akceptacji prośby.' });
-    }
-});
-
-// --- POBIERANIE PROFILU UŻYTKOWNIKA PO E-MAILU ---
+// --- POBIERANIE PROFILU ---
 app.get('/api/user/:email', async (req, res) => {
     try {
         const user = await User.findOne({ email: req.params.email });
-        if (!user) {
-            return res.status(404).json({ message: 'Nie znaleziono użytkownika.' });
-        }
+        if (!user) return res.status(404).json({ message: 'Nie znaleziono użytkownika.' });
         res.json({
             name: user.name,
             age: user.age,
@@ -532,48 +422,10 @@ app.get('/api/user/:email', async (req, res) => {
             interests: user.interests,
             desc: user.desc,
             photo: user.photo,
-            joined: '26 sierpnia 2026',
             eventCredits: user.eventCredits || 0
         });
     } catch (error) {
-        res.status(500).json({ message: 'Błąd serwera.' });
-    }
-});
-
-// --- 13. ŻĄDANIE USUNIĘCIA KONTA ---
-app.post('/api/request-deletion', async (req, res) => {
-    try {
-        const { email } = req.body;
-        const user = await User.findOne({ email });
-
-        if (!user) {
-            return res.status(404).json({ message: 'Nie znaleziono użytkownika.' });
-        }
-
-        user.deletionRequested = true;
-        user.deletionDate = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
-        await user.save();
-
-        await sendBrevoEmail(
-            email,
-            'Szkoda, że odchodzisz z Drink Stop 😢',
-            `
-                <div style="font-family: Arial, sans-serif; text-align: center; padding: 20px; background-color: #f9f9f9; border-radius: 10px;">
-                    <h2 style="color: #ff4757; margin-bottom: 10px;">Z przykrością przyjęliśmy Twoją prośbę</h2>
-                    <p style="color: #333; font-size: 15px;">Otrzymaliśmy zgłoszenie usunięcia Twojego konta w aplikacji <b>Drink Stop</b>.</p>
-                    <p style="color: #555; font-size: 14px;">Twoje konto zostanie całkowicie usunięte za <b>30 dni</b>. Jeśli zmienisz zdanie, wystarczy, że po prostu zalogujesz się ponownie przed upływem tego terminu, a proces usuwania zostanie automatycznie anulowany.</p>
-                    <hr style="border: none; border-top: 1px solid #ddd; margin: 30px 0 20px 0;">
-                    <p style="color: #888; font-size: 12px; line-height: 1.5; margin: 0;">
-                        Pozdrawiamy,<br>Zespół Drink Stop 🍻
-                    </p>
-                </div>
-            `
-        );
-
-        res.json({ message: 'Zlecono usunięcie konta i wysłano e-mail.' });
-    } catch (error) {
-        console.error('Błąd usuwania konta:', error);
-        res.status(500).json({ message: 'Błąd serwera podczas żądania usunięcia konta.' });
+        res.status(500).json({ message: 'Błąd.' });
     }
 });
 
