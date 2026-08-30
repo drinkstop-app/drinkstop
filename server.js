@@ -354,9 +354,6 @@ app.post('/api/activate-premium', async (req, res) => {
 app.post('/api/test-payment', async (req, res) => {
     try {
         const { email, type, plan } = req.body; 
-        // type: 'premium' lub 'b2b'
-        // plan: 'weekly', 'monthly' (dla premium) lub '1', '5', '10' (dla b2b)
-
         const user = await User.findOne({ email });
         if (!user) {
             return res.status(404).json({ message: 'Nie znaleziono użytkownika.' });
@@ -384,7 +381,6 @@ app.post('/api/test-payment', async (req, res) => {
 
 // --- 11. ENDPOINTY DLA PINEZEK (WYJŚĆ) ---
 
-// Pobieranie wszystkich aktywnych wyjść
 app.get('/api/outings', async (req, res) => {
     try {
         const outings = await Outing.find({});
@@ -394,11 +390,9 @@ app.get('/api/outings', async (req, res) => {
     }
 });
 
-// Tworzenie nowego wyjścia
 app.post('/api/outings', async (req, res) => {
     try {
         const { userEmail, name, city, location, plans, desc, coordinates } = req.body;
-        
         const newOuting = new Outing({
             userEmail, name, city, location, plans, desc, coordinates
         });
@@ -410,7 +404,6 @@ app.post('/api/outings', async (req, res) => {
     }
 });
 
-// Ręczne usuwanie wyjścia (tylko przez autora)
 app.delete('/api/outings/:id', async (req, res) => {
     try {
         const { id } = req.params;
@@ -441,6 +434,7 @@ const messageSchema = new mongoose.Schema({
     message: String,
     type: { type: String, default: 'chat' }, 
     status: { type: String, default: 'pending' }, 
+    deliveryStatus: { type: String, default: 'sent' }, // 'sent' (1 szary), 'delivered' (2 szare), 'read' (2 niebieskie)
     createdAt: { type: Date, default: Date.now }
 });
 const Message = mongoose.model('Message', messageSchema);
@@ -449,11 +443,47 @@ const Message = mongoose.model('Message', messageSchema);
 app.post('/api/messages', async (req, res) => {
     try {
         const { senderEmail, senderName, receiverEmail, receiverName, message, type } = req.body;
-        const newMessage = new Message({ senderEmail, senderName, receiverEmail, receiverName, message, type });
+        const newMessage = new Message({ 
+            senderEmail, 
+            senderName, 
+            receiverEmail, 
+            receiverName, 
+            message, 
+            type, 
+            deliveryStatus: 'sent' 
+        });
         await newMessage.save();
         res.status(201).json({ message: 'Wiadomość wysłana pomyślnie!', data: newMessage });
     } catch (error) {
         res.status(500).json({ message: 'Błąd podczas wysyłania wiadomości.' });
+    }
+});
+
+// --- OZNACZENIE JAKO DOSTARCZONE ---
+app.post('/api/messages/delivered', async (req, res) => {
+    try {
+        const { myEmail } = req.body;
+        await Message.updateMany(
+            { receiverEmail: myEmail, deliveryStatus: 'sent' },
+            { $set: { deliveryStatus: 'delivered' } }
+        );
+        res.json({ message: 'Wiadomości oznaczone jako dostarczone.' });
+    } catch (error) {
+        res.status(500).json({ message: 'Błąd.' });
+    }
+});
+
+// --- OZNACZENIE JAKO ODCZYTANE ---
+app.post('/api/messages/read', async (req, res) => {
+    try {
+        const { myEmail, partnerEmail } = req.body;
+        await Message.updateMany(
+            { senderEmail: partnerEmail, receiverEmail: myEmail, deliveryStatus: { $ne: 'read' } },
+            { $set: { deliveryStatus: 'read' } }
+        );
+        res.json({ message: 'Wiadomości oznaczone jako przeczytane.' });
+    } catch (error) {
+        res.status(500).json({ message: 'Błąd.' });
     }
 });
 
