@@ -343,7 +343,8 @@ app.post('/api/outings', authMiddleware, async (req, res) => {
         const newOuting = new Outing({
             userId: user._id,
             userEmail: user.email,
-            name, city, location, plans, desc, coordinates
+            name: name || user.name, 
+            city, location, plans, desc, coordinates
         });
 
         await newOuting.save();
@@ -397,6 +398,24 @@ app.post('/api/messages', async (req, res) => {
         res.status(201).json({ message: 'Wysłano!', data: newMessage });
     } catch (error) {
         res.status(500).json({ message: 'Błąd.' });
+    }
+});
+
+// --- AKCEPTACJA PROŚBY (ZABEZPIECZONA TOKENEM) ---
+app.patch('/api/messages/accept/:id', authMiddleware, async (req, res) => {
+    try {
+        const { id } = req.params;
+        const updatedMessage = await Message.findByIdAndUpdate(
+            id, 
+            { status: 'accepted' }, 
+            { new: true }
+        );
+        if (!updatedMessage) {
+            return res.status(404).json({ message: 'Nie znaleziono prośby.' });
+        }
+        res.json({ message: 'Prośba została zaakceptowana!', data: updatedMessage });
+    } catch (error) {
+        res.status(500).json({ message: 'Błąd serwera podczas akceptacji prośby.' });
     }
 });
 
