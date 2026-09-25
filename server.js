@@ -4,7 +4,6 @@ const mongoose = require('mongoose');
 const cors = require('cors');
 const bcrypt = require('bcryptjs');
 const crypto = require('crypto');
-const path = require('path');
 const jwt = require('jsonwebtoken');
 
 const app = express();
@@ -27,19 +26,19 @@ const authMiddleware = (req, res, next) => {
         if (err) {
             return res.status(403).json({ message: 'Nieprawidłowy lub wygasły token.' });
         }
-        req.user = user; // { id: ... }
+        req.user = user;
         next();
     });
 };
 
-// --- 1. POŁĄCZENIE Z BAZĄ DANYCH ---
+// --- POŁĄCZENIE Z BAZĄ DANYCH ---
 const dbLink = process.env.MONGO_URI;
 
 mongoose.connect(dbLink)
     .then(() => console.log('✅ Udało się! Połączono z bazą MongoDB Drink Stop.'))
     .catch((err) => console.error('❌ Błąd połączenia z bazą danych:', err));
 
-// --- 2. SCHEMAT UŻYTKOWNIKA ---
+// --- SCHEMAT UŻYTKOWNIKA ---
 const userSchema = new mongoose.Schema({
     name: String,
     email: { type: String, unique: true },
@@ -61,7 +60,7 @@ const userSchema = new mongoose.Schema({
 });
 const User = mongoose.model('User', userSchema);
 
-// --- SCHEMAT WYJŚCIA (PINEZKI) ---
+// --- SCHEMAT WYJŚCIA (PINEZKI PRYWATNE) ---
 const outingSchema = new mongoose.Schema({
     userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
     userEmail: { type: String, required: true },
@@ -79,7 +78,23 @@ const outingSchema = new mongoose.Schema({
 });
 const Outing = mongoose.model('Outing', outingSchema);
 
-// --- FUNKCJA POMOCNICZA DO WYSYŁKI MAILI PRZEZ API BREVO ---
+// --- SCHEMAT EVENTU (PINEZKI B2B / FIRMOWE) ---
+const eventSchema = new mongoose.Schema({
+    userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
+    userEmail: { type: String, required: true },
+    company: String,
+    title: String,
+    location: String,
+    desc: String,
+    coordinates: [Number], // [longitude, latitude]
+    createdAt: { 
+        type: Date, 
+        default: Date.now 
+    } 
+});
+const EventItem = mongoose.model('EventItem', eventSchema);
+
+// --- FUNKCJA POMOCNICZA DO WYSYŁKI MAILI ---
 async function sendBrevoEmail(toEmail, subject, htmlContent) {
     const response = await fetch('https://api.brevo.com/v3/smtp/email', {
         method: 'POST',
@@ -103,7 +118,7 @@ async function sendBrevoEmail(toEmail, subject, htmlContent) {
     return await response.json();
 }
 
-// --- 4. REJESTRACJA ---
+// --- REJESTRACJA ---
 app.post('/api/register', async (req, res) => {
     try {
         const { name, email, age, city, password, photo, marketingConsent } = req.body;
@@ -117,10 +132,7 @@ app.post('/api/register', async (req, res) => {
         const token = crypto.randomBytes(32).toString('hex'); 
 
         const newUser = new User({
-            name, 
-            email, 
-            age, 
-            city, 
+            name, email, age, city, 
             password: hashedPassword, 
             verificationToken: token, 
             photo: photo || '',
@@ -136,52 +148,41 @@ app.post('/api/register', async (req, res) => {
         await sendBrevoEmail(
             email,
             'Potwierdź swój adres e-mail w Drink Stop! 🍻',
-            `
-                <div style="font-family: Arial, sans-serif; text-align: center; padding: 20px; background-color: #f9f9f9; border-radius: 10px;">
-                    <h2 style="color: #f5a623; margin-bottom: 10px;">Witaj w Drink Stop, ${name}!</h2>
-                    <p style="color: #333; font-size: 15px;">Aby w pełni korzystać z aplikacji, aktywuj swoje konto:</p>
-                    <a href="${verificationLink}" style="display: inline-block; padding: 12px 24px; background-color: #f5a623; color: #000; text-decoration: none; border-radius: 8px; font-weight: bold; margin: 20px 0;">Aktywuj konto 🍻</a>
-                </div>
-            `
+            `<div style="font-family: Arial, sans-serif; text-align: center; padding: 20px; background-color: #f9f9f9; border-radius: 10px;">
+                <h2 style="color: #f5a623;">Witaj w Drink Stop, ${name}!</h2>
+                <p>Aktywuj swoje konto:</p>
+                <a href="${verificationLink}" style="display: inline-block; padding: 12px 24px; background-color: #f5a623; color: #000; text-decoration: none; border-radius: 8px; font-weight: bold;">Aktywuj konto 🍻</a>
+            </div>`
         );
 
-        res.status(201).json({ message: 'Konto utworzone! Sprawdź swoją skrzynkę e-mail, aby je aktywować.' });
+        res.status(201).json({ message: 'Konto utworzone! Sprawdź e-mail, aby je aktywować.' });
     } catch (error) {
-        console.error('Błąd rejestracji:', error);
         res.status(500).json({ message: 'Wystąpił błąd serwera.' });
     }
 });
 
-// --- 5. AKTYWACJA KONTA ---
+// --- AKTYWACJA KONTA ---
 app.get('/api/verify/:token', async (req, res) => {
     try {
         const user = await User.findOne({ verificationToken: req.params.token });
-        if (!user) return res.status(400).send('<h1 style="color:red; text-align:center; margin-top:50px;">Błąd! Nieprawidłowy lub wygasły link.</h1>');
+        if (!user) return res.status(400).send('<h1 style="color:red; text-align:center;">Błąd! Nieprawidłowy lub wygasły link.</h1>');
 
         user.isVerified = true;
         user.verificationToken = undefined;
         await user.save();
 
-        res.send(`
-            <div style="font-family: sans-serif; text-align: center; margin-top: 50px; background-color: #121212; color: white; height: 100vh; padding-top: 50px;">
-                <h1 style="color: #90c83a;">Konto zostało aktywowane! ✅</h1>
-                <p>Możesz teraz bezpiecznie zamknąć tę kartę i zalogować się w aplikacji.</p>
-            </div>
-        `);
+        res.send('<div style="background:#121212;color:white;text-align:center;padding-top:50px;height:100vh;"><h1 style="color:#90c83a;">Konto zostało aktywowane! ✅</h1><p>Możesz zamknąć kartę i zalogować się w aplikacji.</p></div>');
     } catch (error) {
-        res.status(500).send('Wystąpił błąd podczas aktywacji.');
+        res.status(500).send('Wystąpił błąd.');
     }
 });
 
-// --- 6. LOGOWANIE ---
+// --- LOGOWANIE ---
 app.post('/api/login', async (req, res) => {
     try {
         const { email, password } = req.body;
-
         const user = await User.findOne({ email });
-        if (!user) {
-            return res.status(400).json({ message: 'Nie znaleziono konta z tym adresem e-mail.' });
-        }
+        if (!user) return res.status(400).json({ message: 'Nie znaleziono konta z tym e-mailem.' });
 
         if (user.deletionRequested) {
             user.deletionRequested = false;
@@ -189,14 +190,10 @@ app.post('/api/login', async (req, res) => {
             await user.save();
         }
 
-        if (!user.isVerified) {
-            return res.status(403).json({ message: 'Konto nie jest aktywne! Kliknij w link wysłany na Twój e-mail.' });
-        }
+        if (!user.isVerified) return res.status(403).json({ message: 'Konto nie jest aktywne! Sprawdź e-mail.' });
 
         const isMatch = await bcrypt.compare(password, user.password);
-        if (!isMatch) {
-            return res.status(400).json({ message: 'Błędne hasło. Spróbuj ponownie.' });
-        }
+        if (!isMatch) return res.status(400).json({ message: 'Błędne hasło.' });
         
         const token = jwt.sign({ id: user._id, email: user.email }, JWT_SECRET, { expiresIn: '7d' });
 
@@ -204,25 +201,18 @@ app.post('/api/login', async (req, res) => {
             message: 'Zalogowano pomyślnie!',
             token,
             user: { 
-                id: user._id,
-                name: user.name, 
-                email: user.email,
-                age: user.age, 
-                city: user.city,
-                status: user.status,
-                interests: user.interests,
-                desc: user.desc,
-                photo: user.photo,
-                eventCredits: user.eventCredits || 0
+                id: user._id, name: user.name, email: user.email,
+                age: user.age, city: user.city, status: user.status,
+                interests: user.interests, desc: user.desc,
+                photo: user.photo, eventCredits: user.eventCredits || 0
             }
         });
     } catch (error) {
-        console.error(error);
-        res.status(500).json({ message: 'Błąd serwera podczas logowania.' });
+        res.status(500).json({ message: 'Błąd serwera.' });
     }
 });
 
-// --- 7. ZAPOMNIANE HASŁO ---
+// --- ZAPOMNIANE HASŁO ---
 app.post('/api/forgot-password', async (req, res) => {
     try {
         const { email } = req.body;
@@ -243,25 +233,25 @@ app.post('/api/forgot-password', async (req, res) => {
     }
 });
 
-// --- 8. ZAPIS NOWEGO HASŁA ---
+// --- ZAPIS NOWEGO HASŁA ---
 app.post('/api/reset-password', async (req, res) => {
     try {
         const { token, newPassword } = req.body;
         const user = await User.findOne({ resetPasswordToken: token, resetPasswordExpires: { $gt: Date.now() } });
-        if (!user) return res.status(400).json({ message: 'Token jest nieprawidłowy lub wygasł.' });
+        if (!user) return res.status(400).json({ message: 'Token nieprawidłowy lub wygasł.' });
 
         user.password = await bcrypt.hash(newPassword, 10);
         user.resetPasswordToken = undefined;
         user.resetPasswordExpires = undefined;
         await user.save();
 
-        res.json({ message: 'Hasło zostało pomyślnie zmienione!' });
+        res.json({ message: 'Hasło zmienione pomyślnie!' });
     } catch (error) {
         res.status(500).json({ message: 'Błąd serwera.' });
     }
 });
 
-// --- 9. AKTUALIZACJA PROFILU ---
+// --- AKTUALIZACJA PROFILU ---
 app.post('/api/update-profile', authMiddleware, async (req, res) => {
     try {
         const { name, age, city, interests, desc, photo } = req.body;
@@ -278,18 +268,12 @@ app.post('/api/update-profile', authMiddleware, async (req, res) => {
         await user.save();
 
         res.json({ 
-            message: 'Profil zaktualizowany pomyślnie!',
+            message: 'Profil zaktualizowany!',
             user: {
-                id: user._id,
-                name: user.name,
-                email: user.email,
-                age: user.age,
-                city: user.city,
-                status: user.status,
-                interests: user.interests,
-                desc: user.desc,
-                photo: user.photo,
-                eventCredits: user.eventCredits || 0
+                id: user._id, name: user.name, email: user.email,
+                age: user.age, city: user.city, status: user.status,
+                interests: user.interests, desc: user.desc,
+                photo: user.photo, eventCredits: user.eventCredits || 0
             }
         });
     } catch (error) {
@@ -297,7 +281,7 @@ app.post('/api/update-profile', authMiddleware, async (req, res) => {
     }
 });
 
-// --- 9.1 ZLECENIE USUNIĘCIA KONTA (NOWOŚĆ) ---
+// --- ZLECENIE USUNIĘCIA KONTA ---
 app.post('/api/request-deletion', async (req, res) => {
     try {
         const { email } = req.body;
@@ -305,7 +289,7 @@ app.post('/api/request-deletion', async (req, res) => {
         if (!user) return res.status(404).json({ message: 'Nie znaleziono użytkownika.' });
 
         user.deletionRequested = true;
-        user.deletionDate = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000); // 30 dni
+        user.deletionDate = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000);
         await user.save();
 
         res.json({ message: 'Zlecono usunięcie konta.' });
@@ -314,7 +298,7 @@ app.post('/api/request-deletion', async (req, res) => {
     }
 });
 
-// --- 10. TESTOWY ENDPOINT PŁATNOŚCI ---
+// --- PŁATNOŚCI TESTOWE ---
 app.post('/api/test-payment', authMiddleware, async (req, res) => {
     try {
         const { type, plan } = req.body; 
@@ -340,7 +324,7 @@ app.post('/api/test-payment', authMiddleware, async (req, res) => {
     }
 });
 
-// --- 11. ENDPOINTY DLA PINEZEK (WYJŚĆ) ---
+// --- PINEZKI PRYWATNE (WYJŚCIA) ---
 app.get('/api/outings', async (req, res) => {
     try {
         const outings = await Outing.find({});
@@ -373,23 +357,52 @@ app.delete('/api/outings/:id', authMiddleware, async (req, res) => {
     try {
         const { id } = req.params;
         const outing = await Outing.findById(id);
-
-        if (!outing) {
-            return res.status(404).json({ message: 'Nie znaleziono takiego wyjścia.' });
-        }
+        if (!outing) return res.status(404).json({ message: 'Nie znaleziono wyjścia.' });
 
         if (outing.userId.toString() !== req.user.id) {
-            return res.status(403).json({ message: 'Nie masz uprawnień do usunięcia tej pinezki!' });
+            return res.status(403).json({ message: 'Brak uprawnień!' });
         }
 
         await Outing.findByIdAndDelete(id);
         res.json({ message: 'Pinezka została usunięta.' });
     } catch (error) {
-        res.status(500).json({ message: 'Błąd serwera podczas usuwania.' });
+        res.status(500).json({ message: 'Błąd serwera.' });
     }
 });
 
-// --- WIADOMOŚCI I CHAT ---
+// --- EVENTY B2B (FIRMOWE) ---
+app.get('/api/events', async (req, res) => {
+    try {
+        const events = await EventItem.find({});
+        res.json(events);
+    } catch (error) {
+        res.status(500).json({ message: 'Błąd pobierania eventów.' });
+    }
+});
+
+app.post('/api/events', authMiddleware, async (req, res) => {
+    try {
+        const { company, title, location, desc, coordinates } = req.body;
+        const user = await User.findById(req.user.id);
+
+        const newEvent = new EventItem({
+            userId: user._id,
+            userEmail: user.email,
+            company: company || 'Firma',
+            title, 
+            location, 
+            desc, 
+            coordinates: coordinates || [19.1451, 51.9194]
+        });
+
+        await newEvent.save();
+        res.status(201).json({ message: 'Event opublikowany pomyślnie!', event: newEvent });
+    } catch (error) {
+        res.status(500).json({ message: 'Błąd podczas publikowania eventu.' });
+    }
+});
+
+// --- CZAT I WIADOMOŚCI ---
 const messageSchema = new mongoose.Schema({
     senderEmail: String,
     senderName: String,
@@ -416,28 +429,17 @@ app.post('/api/messages', async (req, res) => {
 
 app.patch('/api/messages/accept/:id', authMiddleware, async (req, res) => {
     try {
-        const { id } = req.params;
-        const updatedMessage = await Message.findByIdAndUpdate(
-            id, 
-            { status: 'accepted' }, 
-            { new: true }
-        );
-        if (!updatedMessage) {
-            return res.status(404).json({ message: 'Nie znaleziono prośby.' });
-        }
-        res.json({ message: 'Prośba została zaakceptowana!', data: updatedMessage });
+        const updatedMessage = await Message.findByIdAndUpdate(req.params.id, { status: 'accepted' }, { new: true });
+        if (!updatedMessage) return res.status(404).json({ message: 'Nie znaleziono prośby.' });
+        res.json({ message: 'Prośba zaakceptowana!', data: updatedMessage });
     } catch (error) {
-        res.status(500).json({ message: 'Błąd serwera podczas akceptacji prośby.' });
+        res.status(500).json({ message: 'Błąd serwera.' });
     }
 });
 
 app.post('/api/messages/delivered', async (req, res) => {
     try {
-        const { myEmail } = req.body;
-        await Message.updateMany(
-            { receiverEmail: myEmail, deliveryStatus: 'sent' },
-            { $set: { deliveryStatus: 'delivered' } }
-        );
+        await Message.updateMany({ receiverEmail: req.body.myEmail, deliveryStatus: 'sent' }, { $set: { deliveryStatus: 'delivered' } });
         res.json({ message: 'Status zaktualizowany.' });
     } catch (err) {
         res.status(500).json({ message: 'Błąd.' });
@@ -446,11 +448,7 @@ app.post('/api/messages/delivered', async (req, res) => {
 
 app.post('/api/messages/read', async (req, res) => {
     try {
-        const { myEmail, partnerEmail } = req.body;
-        await Message.updateMany(
-            { senderEmail: partnerEmail, receiverEmail: myEmail, deliveryStatus: { $ne: 'read' } },
-            { $set: { deliveryStatus: 'read' } }
-        );
+        await Message.updateMany({ senderEmail: req.body.partnerEmail, receiverEmail: req.body.myEmail, deliveryStatus: { $ne: 'read' } }, {$set: { deliveryStatus: 'read' } });
         res.json({ message: 'Oznaczone jako odczytane.' });
     } catch (err) {
         res.status(500).json({ message: 'Błąd.' });
@@ -459,8 +457,7 @@ app.post('/api/messages/read', async (req, res) => {
 
 app.get('/api/messages/:email', async (req, res) => {
     try {
-        const { email } = req.params;
-        const messages = await Message.find({ $or: [{ receiverEmail: email }, { senderEmail: email }] }).sort({ createdAt: 1 });
+        const messages = await Message.find({ $or: [{ receiverEmail: req.params.email }, { senderEmail: req.params.email }] }).sort({ createdAt: 1 });
         res.json(messages);
     } catch (error) {
         res.status(500).json({ message: 'Błąd.' });
@@ -472,20 +469,15 @@ app.get('/api/user/:email', async (req, res) => {
         const user = await User.findOne({ email: req.params.email });
         if (!user) return res.status(404).json({ message: 'Nie znaleziono użytkownika.' });
         res.json({
-            name: user.name,
-            age: user.age,
-            city: user.city,
-            interests: user.interests,
-            desc: user.desc,
-            photo: user.photo,
-            eventCredits: user.eventCredits || 0
+            name: user.name, age: user.age, city: user.city,
+            interests: user.interests, desc: user.desc,
+            photo: user.photo, eventCredits: user.eventCredits || 0
         });
     } catch (error) {
         res.status(500).json({ message: 'Błąd.' });
     }
 });
 
-// --- 12. START SERWERA ---
 const PORT = process.env.PORT || 5000;
 app.listen(PORT, () => {
     console.log(`🚀 Serwer działa! Otwórz: http://localhost:${PORT}`);
