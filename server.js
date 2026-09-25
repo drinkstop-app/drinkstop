@@ -63,7 +63,7 @@ const User = mongoose.model('User', userSchema);
 
 // --- SCHEMAT WYJŚCIA (PINEZKI) ---
 const outingSchema = new mongoose.Schema({
-    userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true }, // Powiązanie z właścicielem
+    userId: { type: mongoose.Schema.Types.ObjectId, ref: 'User', required: true },
     userEmail: { type: String, required: true },
     name: String,
     city: String,
@@ -261,7 +261,7 @@ app.post('/api/reset-password', async (req, res) => {
     }
 });
 
-// --- 9. AKTUALIZACJA PROFILU (ZABEZPIECZONA TOKENEM) ---
+// --- 9. AKTUALIZACJA PROFILU ---
 app.post('/api/update-profile', authMiddleware, async (req, res) => {
     try {
         const { name, age, city, interests, desc, photo } = req.body;
@@ -297,7 +297,24 @@ app.post('/api/update-profile', authMiddleware, async (req, res) => {
     }
 });
 
-// --- 10. TESTOWY ENDPOINT PŁATNOŚCI (ZABEZPIECZONY TOKENEM) ---
+// --- 9.1 ZLECENIE USUNIĘCIA KONTA (NOWOŚĆ) ---
+app.post('/api/request-deletion', async (req, res) => {
+    try {
+        const { email } = req.body;
+        const user = await User.findOne({ email });
+        if (!user) return res.status(404).json({ message: 'Nie znaleziono użytkownika.' });
+
+        user.deletionRequested = true;
+        user.deletionDate = new Date(Date.now() + 30 * 24 * 60 * 60 * 1000); // 30 dni
+        await user.save();
+
+        res.json({ message: 'Zlecono usunięcie konta.' });
+    } catch (error) {
+        res.status(500).json({ message: 'Błąd serwera.' });
+    }
+});
+
+// --- 10. TESTOWY ENDPOINT PŁATNOŚCI ---
 app.post('/api/test-payment', authMiddleware, async (req, res) => {
     try {
         const { type, plan } = req.body; 
@@ -324,7 +341,6 @@ app.post('/api/test-payment', authMiddleware, async (req, res) => {
 });
 
 // --- 11. ENDPOINTY DLA PINEZEK (WYJŚĆ) ---
-
 app.get('/api/outings', async (req, res) => {
     try {
         const outings = await Outing.find({});
@@ -334,7 +350,6 @@ app.get('/api/outings', async (req, res) => {
     }
 });
 
-// Tworzenie pinezki powiązane z zalogowanym użytkownikiem
 app.post('/api/outings', authMiddleware, async (req, res) => {
     try {
         const { name, city, location, plans, desc, coordinates } = req.body;
@@ -354,7 +369,6 @@ app.post('/api/outings', authMiddleware, async (req, res) => {
     }
 });
 
-// Usunięcie pinezki – sprawdza czy zalogowany użytkownik jest jej właścicielem!
 app.delete('/api/outings/:id', authMiddleware, async (req, res) => {
     try {
         const { id } = req.params;
@@ -364,7 +378,6 @@ app.delete('/api/outings/:id', authMiddleware, async (req, res) => {
             return res.status(404).json({ message: 'Nie znaleziono takiego wyjścia.' });
         }
 
-        // Weryfikacja właściciela po ID użytkownika z tokenu JWT
         if (outing.userId.toString() !== req.user.id) {
             return res.status(403).json({ message: 'Nie masz uprawnień do usunięcia tej pinezki!' });
         }
@@ -401,7 +414,6 @@ app.post('/api/messages', async (req, res) => {
     }
 });
 
-// --- AKCEPTACJA PROŚBY (ZABEZPIECZONA TOKENEM) ---
 app.patch('/api/messages/accept/:id', authMiddleware, async (req, res) => {
     try {
         const { id } = req.params;
@@ -419,6 +431,32 @@ app.patch('/api/messages/accept/:id', authMiddleware, async (req, res) => {
     }
 });
 
+app.post('/api/messages/delivered', async (req, res) => {
+    try {
+        const { myEmail } = req.body;
+        await Message.updateMany(
+            { receiverEmail: myEmail, deliveryStatus: 'sent' },
+            { $set: { deliveryStatus: 'delivered' } }
+        );
+        res.json({ message: 'Status zaktualizowany.' });
+    } catch (err) {
+        res.status(500).json({ message: 'Błąd.' });
+    }
+});
+
+app.post('/api/messages/read', async (req, res) => {
+    try {
+        const { myEmail, partnerEmail } = req.body;
+        await Message.updateMany(
+            { senderEmail: partnerEmail, receiverEmail: myEmail, deliveryStatus: { $ne: 'read' } },
+            { $set: { deliveryStatus: 'read' } }
+        );
+        res.json({ message: 'Oznaczone jako odczytane.' });
+    } catch (err) {
+        res.status(500).json({ message: 'Błąd.' });
+    }
+});
+
 app.get('/api/messages/:email', async (req, res) => {
     try {
         const { email } = req.params;
@@ -429,7 +467,6 @@ app.get('/api/messages/:email', async (req, res) => {
     }
 });
 
-// --- POBIERANIE PROFILU ---
 app.get('/api/user/:email', async (req, res) => {
     try {
         const user = await User.findOne({ email: req.params.email });
